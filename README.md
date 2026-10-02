@@ -28,7 +28,7 @@ Deploy the AI Prompt Firewall locally on your subsystem in under a minute:
 
 ```bash
 # 1. Clone the repository framework
-git clone https://github.com
+git clone https://github.com cd NovaGate-AIShield
 cd NovaGate-AIShield
 
 # 2. Initialize your sandboxed environment and dependencies
