@@ -11,10 +11,14 @@ pulling in FastAPI.
 
 from novagate.config import Settings, settings
 from novagate.evaluator import VectorThreatEvaluator
-from novagate.normalizer import AdvancedPayloadNormalizer, normalize
+from novagate.normalizer import AdvancedPayloadNormalizer, NormalizationReport, normalize
+from novagate.signatures import CATEGORIES, DetectionCategory
 
 __all__ = [
     "AdvancedPayloadNormalizer",
+    "CATEGORIES",
+    "DetectionCategory",
+    "NormalizationReport",
     "VectorThreatEvaluator",
     "normalize",
     "Settings",

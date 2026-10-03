@@ -327,6 +327,12 @@ class VectorThreatEvaluator:
         signature is preserved so existing integrations keep working, but the
         caller should prefer :meth:`evaluate` with an explicit
         :class:`NormalizationReport` to avoid normalising twice.
+
+        The v2 metric keys are all still present. ``SEMANTIC_VECTOR_ANOMALY``
+        and ``vector_proximity`` are deliberately absent: v2's "semantic vector
+        distance" was a count of anchor keywords, not an embedding, so it
+        reported a vector metric without computing one. Signatures that match
+        directly now raise ``categories_triggered`` instead.
         """
         report = normalize(processed_string, self.config)
         return self.evaluate(report)
