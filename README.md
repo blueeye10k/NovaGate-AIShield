@@ -27,7 +27,7 @@ test, and every limitation is written down. Put it in front of your app as a
 cheap first tier. Put a model classifier behind it if the stakes are high.
 
 **Current state:** 36/36 corpus attacks blocked, 0/46 benign prompts blocked,
-174 tests passing. These are small hand-written corpora, not an independent
+184 tests passing. These are small hand-written corpora, not an independent
 benchmark — see [Limitations](#limitations-read-this-part) before you rely on
 the numbers.
 
@@ -171,6 +171,13 @@ Defaults are chosen for safety, not convenience:
 - **API keys are compared with `secrets.compare_digest`.**
 - **`X-Forwarded-For` is ignored by default**, so a client cannot mint a fresh
   rate-limit bucket by sending the header. Enable it only behind your own proxy.
+- **The pass-through proxy is rate limited and size checked** like
+  `/api/v1/inspect`. It is the more expensive route — a network call and your
+  provider's credit — so leaving it open would make the limiter decorative.
+- **A client-supplied `X-Request-ID` is accepted only if it looks like a trace
+  ID** (64 chars of `[A-Za-z0-9._:-]`). It is echoed in a header and written to
+  every audit line, so an unbounded caller-chosen value is a log-volume
+  amplifier. Anything else gets a generated ID.
 
 Before deploying, read [SECURITY.md](SECURITY.md#hardening-checklist-for-deployment).
 
@@ -201,7 +208,7 @@ Or `cp .env.example .env`, set `NOVAGATE_API_KEY`, and `docker compose up`.
 ## Testing
 
 ```bash
-pytest                                    # 174 tests, no network needed
+pytest                                    # 184 tests, no network needed
 pytest tests/test_corpus.py -v            # just the detection corpora
 python examples/demo_corpus.py            # readable corpus table
 ```
@@ -327,6 +334,11 @@ Engine bugs fixed along the way — all reproduced and covered by tests:
 10. **Blocking console I/O inside `async def`.**
 11. **Rate limiter that was not a rate limit** — a 0.5-second "too fast" check
     that throttled bursts and never pruned its dict.
+12. **The proxy route bypassed it.** `/api/v1/chat/completions` had no rate limit
+    and no size check, so the limiter could be side-stepped entirely by using the
+    more expensive route instead.
+13. **`X-Request-ID` was unbounded and client-chosen.** One request with a 4KB ID
+    wrote a 4KB audit line; 40KB of IDs would have done the same.
 
 ## License
 

@@ -174,6 +174,53 @@ def test_client_supplied_request_id_is_echoed(client):
     assert response.headers.get("X-Request-ID") == "trace-abc"
 
 
+@pytest.mark.parametrize(
+    "supplied",
+    [
+        "A" * 4000,  # unbounded volume
+        "has spaces and <script>",  # not a trace id
+        "line\nbreak",  # would be awkward in a log
+        "x" * 65,  # just over the limit
+        "'; DROP TABLE audit; --",  # punctuation we do not accept
+    ],
+)
+def test_unsafe_request_id_is_replaced_not_trusted(cfg, supplied):
+    """A client-supplied ID reaches every audit line, so bound it.
+
+    Without a limit one request with a 4KB X-Request-ID wrote a 4KB audit line
+    with caller-chosen content. The ID is now replaced unless it is short and
+    looks like a trace id.
+    """
+    app = create_app(cfg.evolve(rate_limit_enabled=False, console_telemetry=False))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/inspect",
+            json={"user_prompt": "hi"},
+            headers={"X-Request-ID": supplied},
+        )
+        app.state.novagate.audit.close()
+
+    echoed = response.headers["X-Request-ID"]
+    assert len(echoed) <= 16, f"replaced id is still too long: {len(echoed)}"
+    assert echoed != supplied
+    assert supplied not in read_log(cfg)
+
+
+def test_request_id_survives_into_the_audit_log(cfg):
+    """The safe path still correlates, which is the whole point of the header."""
+    app = create_app(cfg.evolve(rate_limit_enabled=False, console_telemetry=False))
+    with TestClient(app) as client:
+        client.post(
+            "/api/v1/inspect",
+            json={"user_prompt": "hi"},
+            headers={"X-Request-ID": "trace-abc.123"},
+        )
+        app.state.novagate.audit.close()
+
+    entry = json.loads(read_log(cfg).splitlines()[0])
+    assert entry["request_id"] == "trace-abc.123"
+
+
 # -------------------------------------------------------------- rate limiting
 def test_rate_limit_returns_429_with_retry_after(cfg):
     app = create_app(cfg.evolve(rate_limit_requests=3, console_telemetry=False))
@@ -532,6 +579,70 @@ def test_proxy_inspects_tool_messages_indirect_injection(cfg):
             },
         )
     assert response.status_code == 403
+
+
+def test_proxy_is_rate_limited(cfg):
+    """The proxy route must obey the limiter.
+
+    It is strictly more expensive than /inspect -- a network call plus someone's
+    API credit -- so an unthrottled proxy is a way around the limiter entirely,
+    not just an omission.
+    """
+    app = create_app(
+        cfg.evolve(
+            upstream_url="http://127.0.0.1:9/v1",
+            upstream_timeout=1.0,
+            console_telemetry=False,
+            rate_limit_enabled=True,
+            rate_limit_requests=3,
+            rate_limit_window=60.0,
+        )
+    )
+    with TestClient(app) as client:
+        codes = [
+            client.post(
+                "/api/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            ).status_code
+            for _ in range(8)
+        ]
+    assert 429 in codes, f"proxy was never throttled: {codes}"
+    # The first requests should have gotten past the limiter and reached the
+    # (deliberately dead) upstream, so the limiter is not simply refusing all.
+    assert codes[0] == 502
+
+
+def test_proxy_enforces_size_limit_on_concatenated_messages(cfg):
+    """Each message can be small while their concatenation is not.
+
+    The scanned text is the concatenation of every user and tool turn, so that
+    is what has to respect max_raw_bytes -- otherwise a large conversation
+    sails past a per-message limit that is never actually applied.
+    """
+    app = create_app(
+        cfg.evolve(
+            upstream_url="http://127.0.0.1:9/v1",
+            console_telemetry=False,
+            max_raw_bytes=2000,
+        )
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "A" * 500} for _ in range(40)]},
+        )
+    assert response.status_code == 413
+    assert response.json()["detail"]["status"] == "PAYLOAD_TOO_LARGE"
+
+
+def test_proxy_rejects_oversized_single_message(cfg):
+    app = create_app(cfg.evolve(upstream_url="http://127.0.0.1:9/v1", console_telemetry=False))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "A" * 200_000}]},
+        )
+    assert response.status_code == 413
 
 
 # ------------------------------------------------------------------ catalog

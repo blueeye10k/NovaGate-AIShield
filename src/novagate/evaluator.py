@@ -24,6 +24,7 @@ from novagate.config import settings as default_settings
 from novagate.normalizer import NormalizationReport, normalize
 from novagate.signatures import (
     _FILLER_ALT,
+    _MAX_PHRASE_WORDS,
     _WORD_GAP,
     CATEGORIES,
     DetectionCategory,
@@ -112,7 +113,15 @@ class VectorThreatEvaluator:
 
     # ---------------------------------------------------------- detection
     def _fuzzy_phrase_patterns(self, signature) -> list[tuple[str, re.Pattern, re.Pattern]]:
-        """Per-phrase (phrase, gap_pattern, glued_pattern), cached."""
+        """Per-phrase (phrase, gap_pattern, glued_pattern), cached.
+
+        Long phrases are truncated to ``_MAX_PHRASE_WORDS``. The glued pattern is
+        built by joining words with ``_FILLER_ALT``, so each word adds 36
+        optional branches: a 20-word phrase compiles to roughly 2^35 states.
+        Nobody writes a 20-word signature, but a contributor might, and the
+        failure would be a CPU hang on the first request rather than an obvious
+        error.
+        """
         key = ("phrases", id(signature))
         cached = self._fuzzy_cache.get(key)
         if cached is None:
@@ -121,6 +130,8 @@ class VectorThreatEvaluator:
                 words = [w for w in re.split(r"[^a-z0-9]+", phrase.lower()) if w]
                 if not words:
                     continue
+                if len(words) > _MAX_PHRASE_WORDS:
+                    words = words[:_MAX_PHRASE_WORDS]
                 gap = re.compile(r"\b" + _WORD_GAP.join(words) + r"\b", re.IGNORECASE)
                 glued = re.compile(_FILLER_ALT.join(words), re.IGNORECASE)
                 cached.append((phrase, gap, glued))

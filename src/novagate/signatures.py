@@ -67,6 +67,11 @@ _FILLER_ALT = "(?:" + "|".join(_FILLERS) + ")?"
 _WORD_GAP = r"[\s\W_]{0,3}"
 _WORD_BOUNDARY = r"(?<![a-z0-9])"
 
+# Bounded, so a long phrase cannot compile to a pattern with an enormous number
+# of states. A 12-word phrase gives 4096 states, which is plenty for real
+# signatures and keeps compile time and memory flat for anything added later.
+_MAX_PHRASE_WORDS = 12
+
 
 @dataclass(frozen=True)
 class RegexSignature:

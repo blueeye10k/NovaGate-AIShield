@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import secrets
 import time
 from pathlib import Path
@@ -23,6 +24,9 @@ from novagate.ratelimit import RateLimitDecision, SlidingWindowRateLimiter
 from novagate.signatures import CATEGORIES
 
 logger = logging.getLogger("novagate")
+
+# Request IDs are trace IDs, not user data: hex, dashes and dots only.
+_SAFE_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._:-]{1,64}")
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -101,6 +105,21 @@ class AppState:
         self.counters[name] = self.counters.get(name, 0) + amount
 
 
+def _request_id_from(supplied: str | None) -> str:
+    """Accept a caller-supplied request ID, but only a sane one.
+
+    The ID is echoed in a response header *and* written to every audit entry, so
+    an unbounded client-supplied value is a log-volume amplifier: one request
+    with a 4KB ``X-Request-ID`` wrote a 4KB line, and the caller chose the
+    content. Anything that is not short and boring is replaced rather than
+    trusted, which keeps correlation working without letting a client dictate
+    what lands on disk.
+    """
+    if supplied and len(supplied) <= 64 and _SAFE_REQUEST_ID_RE.fullmatch(supplied):
+        return supplied
+    return secrets.token_hex(8)
+
+
 def create_app(config: Settings | None = None) -> FastAPI:
     """Build the application. Exposed so tests can build isolated instances."""
     cfg = config or global_settings
@@ -132,7 +151,7 @@ def create_app(config: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def request_context(request: Request, call_next):
         """Attach a request ID and rate-limit headers to every response."""
-        request_id = request.headers.get("X-Request-ID") or secrets.token_hex(8)
+        request_id = _request_id_from(request.headers.get("X-Request-ID"))
         request.state.request_id = request_id
         st: AppState = app.state.novagate
         st.bump("requests_total")
@@ -428,6 +447,30 @@ def create_app(config: Settings | None = None) -> FastAPI:
                 request_id,
             )
 
+        # Rate limiting and size limits apply here too. This route is strictly
+        # more expensive than /inspect -- it makes a network call and spends
+        # someone's API credit -- so leaving it unthrottled would make the
+        # limiter trivially bypassable by using the proxy route instead.
+        if cfg.rate_limit_enabled:
+            decision: RateLimitDecision = st.limiter.check(client_identity(request))
+            if not decision.allowed:
+                st.bump("rate_limited_total")
+                st.audit.record(
+                    "rate_limited",
+                    severity="WARNING",
+                    client=client_identity(request),
+                    request_id=request_id,
+                    retry_after=round(decision.retry_after, 2),
+                    route="proxy",
+                )
+                return _error(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    THREAT_RATE_LIMITED,
+                    "Too many requests. Slow down and try again.",
+                    request_id,
+                    headers=decision.headers(),
+                )
+
         try:
             body = await request.json()
         except Exception:
@@ -459,6 +502,19 @@ def create_app(config: Settings | None = None) -> FastAPI:
                 status.HTTP_400_BAD_REQUEST,
                 THREAT_MALFORMED,
                 "No user or tool messages to inspect.",
+                request_id,
+            )
+
+        # The concatenated untrusted text is what we scan, so it is what has to
+        # respect the size limit. Without this a caller could send an
+        # arbitrarily large conversation, since each individual message stays
+        # under max_raw_bytes while the concatenation does not.
+        if len(untrusted.encode("utf-8", "ignore")) > cfg.max_raw_bytes:
+            st.bump("errors_total")
+            return _error(
+                _http_413(),
+                THREAT_TOO_LARGE,
+                f"Conversation exceeds the {cfg.max_raw_bytes} byte limit.",
                 request_id,
             )
 
