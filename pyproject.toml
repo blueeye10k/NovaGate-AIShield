@@ -1,0 +1,112 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novagate-aishield"
+version = "3.0.0"
+description = "A transparent, dependency-light AI prompt firewall you can read in five minutes and extend."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "NovaGate-AIShield contributors" }]
+keywords = [
+    "prompt-injection",
+    "ai-security",
+    "llm",
+    "firewall",
+    "waf",
+    "fastapi",
+    "security",
+    "owasp",
+    "llm-top-10",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "httpx>=0.27",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+proxy = [
+    "httpx>=0.27",
+]
+
+[project.urls]
+Homepage = "https://github.com/blueeye10k/NovaGate-AIShield"
+Repository = "https://github.com/blueeye10k/NovaGate-AIShield"
+Issues = "https://github.com/blueeye10k/NovaGate-AIShield/issues"
+Security = "https://github.com/blueeye10k/NovaGate-AIShield/blob/main/SECURITY.md"
+"Funding or nonprofit" = "https://github.com/sponsors/blueeye10k"
+
+[project.scripts]
+novagate = "novagate.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["novagate*"]
+
+[tool.setuptools.package-data]
+novagate = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+markers = [
+    "attack: corpus entries that must be blocked",
+    "benign: corpus entries that must never be blocked",
+    "slow: tests that take more than a second",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RET", "ARG"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "B008",   # FastAPI Depends() in defaults is idiomatic
+    "SIM105", # contextlib.suppress is slower than try/except/pass here
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG", "E402"]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["novagate"]
+mypy_path = "src"
+ignore_missing_imports = true
+warn_unused_ignores = false
+disallow_untyped_defs = false
