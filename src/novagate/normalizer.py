@@ -29,9 +29,9 @@ import re
 import unicodedata
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Iterable, List
 
-from novagate.config import Settings, settings as default_settings
+from novagate.config import Settings
+from novagate.config import settings as default_settings
 
 # --------------------------------------------------------------------------
 # Character folding tables
@@ -42,36 +42,88 @@ from novagate.config import Settings, settings as default_settings
 # the model.
 HOMOGLYPHS: dict[str, str] = {
     # Cyrillic -> Latin
-    "\u0430": "a", "\u0435": "e", "\u043e": "o", "\u0440": "p",
-    "\u0441": "c", "\u0445": "x", "\u0443": "y", "\u0456": "i",
-    "\u0455": "s", "\u0458": "j", "\u04bb": "h", "\u04cf": "l",
-    "\u0454": "d", "\u04b9": "r", "\u04ba": "k", "\u04b7": "t",
-    "\u04c0": "p", "\u04d9": "y", "\u04e3": "h", "\u045a": "c",
+    "\u0430": "a",
+    "\u0435": "e",
+    "\u043e": "o",
+    "\u0440": "p",
+    "\u0441": "c",
+    "\u0445": "x",
+    "\u0443": "y",
+    "\u0456": "i",
+    "\u0455": "s",
+    "\u0458": "j",
+    "\u04bb": "h",
+    "\u04cf": "l",
+    "\u0454": "d",
+    "\u04b9": "r",
+    "\u04ba": "k",
+    "\u04b7": "t",
+    "\u04c0": "p",
+    "\u04d9": "y",
+    "\u04e3": "h",
+    "\u045a": "c",
     # Greek -> Latin
-    "\u03b1": "a", "\u03b2": "b", "\u03b5": "e", "\u03b6": "z",
-    "\u03b7": "h", "\u03b9": "i", "\u03ba": "k", "\u03bc": "m",
-    "\u03bd": "v", "\u03bf": "o", "\u03c1": "p", "\u03c4": "t",
-    "\u03c5": "u", "\u03c7": "x", "\u0391": "a", "\u0392": "b",
-    "\u0395": "e", "\u0396": "z", "\u0397": "h", "\u0399": "i",
-    "\u039a": "k", "\u039c": "m", "\u039d": "v", "\u039f": "o",
-    "\u03a1": "p", "\u03a4": "t", "\u03a5": "u", "\u03a7": "x",
+    "\u03b1": "a",
+    "\u03b2": "b",
+    "\u03b5": "e",
+    "\u03b6": "z",
+    "\u03b7": "h",
+    "\u03b9": "i",
+    "\u03ba": "k",
+    "\u03bc": "m",
+    "\u03bd": "v",
+    "\u03bf": "o",
+    "\u03c1": "p",
+    "\u03c4": "t",
+    "\u03c5": "u",
+    "\u03c7": "x",
+    "\u0391": "a",
+    "\u0392": "b",
+    "\u0395": "e",
+    "\u0396": "z",
+    "\u0397": "h",
+    "\u0399": "i",
+    "\u039a": "k",
+    "\u039c": "m",
+    "\u039d": "v",
+    "\u039f": "o",
+    "\u03a1": "p",
+    "\u03a4": "t",
+    "\u03a5": "u",
+    "\u03a7": "x",
     # Armenian / other lookalikes seen in the wild
-    "\u0570": "h", "\u0575": "o", "\u0578": "n", "\u057c": "n",
-    "\u0585": "o", "\u0587": "q", "\u0555": "o", "\u054f": "r",
+    "\u0570": "h",
+    "\u0575": "o",
+    "\u0578": "n",
+    "\u057c": "n",
+    "\u0585": "o",
+    "\u0587": "q",
+    "\u0555": "o",
+    "\u054f": "r",
 }
 
 # Zero-width and bidirectional control characters used to break up keywords.
-INVISIBLE_RE = re.compile(
-    "[\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e\u2061-\u2064\ufe00-\ufe0f]"
-)
+INVISIBLE_RE = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e\u2061-\u2064\ufe00-\ufe0f]")
 # Explicit bidi overrides -- a classic invisible-instruction trick.
 BIDI_RE = re.compile("[\u202a-\u202e\u2066-\u2069]")
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 LEET_MAP = {
-    "0": "o", "1": "i", "2": "z", "3": "e", "4": "a",
-    "5": "s", "6": "g", "7": "t", "8": "b", "9": "g",
-    "@": "a", "$": "s", "!": "i", "|": "i", "+": "t",
+    "0": "o",
+    "1": "i",
+    "2": "z",
+    "3": "e",
+    "4": "a",
+    "5": "s",
+    "6": "g",
+    "7": "t",
+    "8": "b",
+    "9": "g",
+    "@": "a",
+    "$": "s",
+    "!": "i",
+    "|": "i",
+    "+": "t",
 }
 
 # "y" is deliberately excluded: treating it as a vowel made "5y573m" score
@@ -80,9 +132,124 @@ LEET_MAP = {
 # end of a syllable.
 _VOWELS = frozenset("aeiou")
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9@$!|+]+", re.IGNORECASE)
+_WORD_RE = re.compile(r"[a-z']+")
+
+# The ~70 most frequent English words. Used only to judge whether a decode made
+# text *more* like English -- see ``decode_rot13``. Small and hard-coded on
+# purpose: pulling in a word-frequency list to decide whether to try ROT13
+# would be a dependency heavier than the thing it is gating.
+_COMMON_WORDS = frozenset(
+    [
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "if",
+        "then",
+        "else",
+        "of",
+        "to",
+        "in",
+        "on",
+        "at",
+        "by",
+        "for",
+        "with",
+        "from",
+        "into",
+        "onto",
+        "over",
+        "under",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "am",
+        "do",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "will",
+        "would",
+        "shall",
+        "should",
+        "can",
+        "could",
+        "may",
+        "might",
+        "must",
+        "not",
+        "no",
+        "nor",
+        "so",
+        "than",
+        "that",
+        "this",
+        "these",
+        "those",
+        "you",
+        "your",
+        "yours",
+        "i",
+        "me",
+        "my",
+        "we",
+        "our",
+        "they",
+        "them",
+        "their",
+        "he",
+        "she",
+        "it",
+        "its",
+        "his",
+        "her",
+        "there",
+        "here",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "any",
+        "each",
+        "every",
+        "some",
+        "more",
+        "most",
+        "much",
+        "many",
+        "other",
+        "such",
+        "only",
+        "own",
+        "same",
+        "about",
+        "after",
+        "again",
+        "against",
+        "because",
+        "before",
+        "below",
+        "between",
+        "during",
+        "out",
+        "off",
+        "once",
+    ]
+)
 _B64_RUN_RE = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 _HEX_RUN_RE = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
-_UNICODE_ESCAPE_RE = re.compile(r"(?:\\u[0-9a-fA-F]{4}){2,}|\\x[0-9a-fA-F]{2}(?:\\x[0-9a-fA-F]{2}){3,}")
+_UNICODE_ESCAPE_RE = re.compile(
+    r"(?:\\u[0-9a-fA-F]{4}){2,}|\\x[0-9a-fA-F]{2}(?:\\x[0-9a-fA-F]{2}){3,}"
+)
 _PERCENT_RE = re.compile(r"(?:%[0-9a-fA-F]{2}){3,}")
 
 
@@ -96,8 +263,8 @@ class NormalizationReport:
     """
 
     primary: str
-    variants: List[str] = field(default_factory=list)
-    layers_unwrapped: List[str] = field(default_factory=list)
+    variants: list[str] = field(default_factory=list)
+    layers_unwrapped: list[str] = field(default_factory=list)
     had_invisible_chars: bool = False
     had_bidi_controls: bool = False
     decode_depth: int = 0
@@ -147,7 +314,9 @@ class AdvancedPayloadNormalizer:
             return False
         if cls._printable_ratio(text) < min_ratio:
             return False
-        alnum = sum(1 for ch in text if ch.isalnum() or ch in " \t.,!?;:'\"-_/@#$%&*()[]{}<>+=`~^|\\")
+        alnum = sum(
+            1 for ch in text if ch.isalnum() or ch in " \t.,!?;:'\"-_/@#$%&*()[]{}<>+=`~^|\\"
+        )
         return alnum / len(text) >= min_ratio
 
     @staticmethod
@@ -217,9 +386,9 @@ class AdvancedPayloadNormalizer:
                     return "".join(
                         chr(int(blob[i + 2 : i + 6], 16)) for i in range(0, len(blob), 6)
                     )
-                return bytes(
-                    int(blob[i + 2 : i + 4], 16) for i in range(0, len(blob), 4)
-                ).decode("utf-8", errors="strict")
+                return bytes(int(blob[i + 2 : i + 4], 16) for i in range(0, len(blob), 4)).decode(
+                    "utf-8", errors="strict"
+                )
             except (ValueError, UnicodeDecodeError):
                 return blob
 
@@ -234,8 +403,42 @@ class AdvancedPayloadNormalizer:
         return html.unescape(text) if "&" in text else text
 
     @classmethod
+    def _common_word_ratio(cls, text: str) -> float:
+        """Share of words that are common English function words."""
+        words = [w for w in _WORD_RE.findall(text.lower()) if len(w) >= 2]
+        if not words:
+            return 0.0
+        return sum(1 for w in words if w in _COMMON_WORDS) / len(words)
+
+    # A decode must clear this bar before it is believed. A single function
+    # word in a short payload is noise; roughly one in ten is signal.
+    _min_rot13_word_ratio = 0.10
+
+    @classmethod
     def decode_rot13(cls, text: str) -> str:
-        return codecs.encode(text, "rot_13")
+        """ROT13, but only when it makes the text *more* like English.
+
+        ROT13 is its own inverse and never fails, so calling it on every input
+        always produces a different string. That is the trap: applied blindly it
+        turns every plain-English prompt into a "decoded" variant and reports a
+        ``ROT13_Decode`` layer for a payload nobody obfuscated -- which is the
+        same defect as decoding base64 into binary noise.
+
+        The discriminator is the share of common English function words. Real
+        English is dense in them; ROT13 of real English contains almost none,
+        because the words that survive the substitution are all content words.
+        So the decode is kept only when decoding *raises* the score past a
+        floor. English in, English out, no layer reported; ROT13 in, plain
+        English out, layer reported.
+        """
+        decoded = codecs.encode(text, "rot_13")
+        if decoded == text:
+            return text
+        if cls._common_word_ratio(decoded) <= cls._min_rot13_word_ratio:
+            return text
+        if cls._common_word_ratio(decoded) <= cls._common_word_ratio(text):
+            return text
+        return decoded
 
     # --------------------------------------------------------- leetspeak
     @staticmethod
@@ -249,12 +452,26 @@ class AdvancedPayloadNormalizer:
     def leet_decode_token(cls, token: str) -> str:
         """Decode one token only when the result is *more* word-like.
 
-        Requires at least two characters to actually change, which keeps
-        ``mp3``, ``sha256``, ``base64`` and ``3.5`` intact.
+        Two conditions must both hold.
+
+        **Enough characters changed.** Either two or more substitutions, or a
+        single substitution in a token of five characters or more. Requiring two
+        changes unconditionally is too strict -- ``IGN0RE`` differs from
+        ``ignore`` by one character and was therefore never un-obfuscated,
+        while ``mp3`` (one change, three characters) was correctly left alone.
+
+        **The word-likeness improved.** The decoded form must have a higher
+        vowel ratio (over ``aeiou``) than the original. This is what keeps
+        ``sha256`` and ``base64`` intact: their vowels do not improve, so the
+        substitution is rejected even though the mapping would technically
+        apply.
+
+        Leetspeak results are only ever used as scan variants -- the display
+        string keeps the author's original text.
         """
         mapped = "".join(LEET_MAP.get(ch, ch) for ch in token)
-        changes = sum(1 for a, b in zip(token, mapped) if a != b)
-        if changes < 2:
+        changes = sum(1 for a, b in zip(token, mapped, strict=True) if a != b)
+        if changes < 2 and not (changes == 1 and len(token) >= 5):
             return token
         if cls._vowel_ratio(mapped) <= cls._vowel_ratio(token):
             return token
@@ -274,8 +491,8 @@ class AdvancedPayloadNormalizer:
             raw = raw[: cfg.max_raw_bytes]
             truncated = True
 
-        variants: List[str] = [raw]
-        layers: List[str] = []
+        variants: list[str] = [raw]
+        layers: list[str] = []
 
         def add_variant(candidate: str, label: str) -> None:
             candidate = candidate.strip()
@@ -307,7 +524,10 @@ class AdvancedPayloadNormalizer:
                     (self.decode_unicode_escapes, "Unicode_Escape_Decode"),
                     (self.decode_url, "URL_Decode"),
                     (self.decode_html_entities, "HTML_Entity_Decode"),
-                    (lambda t: self.decode_base64(t, cfg.min_printable_ratio, cfg.min_b64_run), "Base64_Decode"),
+                    (
+                        lambda t: self.decode_base64(t, cfg.min_printable_ratio, cfg.min_b64_run),
+                        "Base64_Decode",
+                    ),
                     (lambda t: self.decode_hex(t, cfg.min_printable_ratio), "Hex_Decode"),
                 ):
                     try:
@@ -322,9 +542,7 @@ class AdvancedPayloadNormalizer:
             # scan variants; never replaces the display string.
             for candidate in list(variants):
                 for match in _B64_RUN_RE.findall(candidate):
-                    decoded = self.decode_base64(
-                        match, cfg.min_printable_ratio, min_run=16
-                    )
+                    decoded = self.decode_base64(match, cfg.min_printable_ratio, min_run=16)
                     if decoded != match:
                         add_variant(decoded, "Embedded_Base64_Decode")
                         grew = True

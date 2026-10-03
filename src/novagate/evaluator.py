@@ -17,15 +17,15 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from typing import Mapping, Sequence, Tuple
+from collections.abc import Mapping, Sequence
 
-from novagate.config import Settings, settings as default_settings
+from novagate.config import Settings
+from novagate.config import settings as default_settings
 from novagate.normalizer import NormalizationReport, normalize
 from novagate.signatures import (
     _FILLER_ALT,
     _WORD_GAP,
     CATEGORIES,
-    CATEGORY_BY_NAME,
     DetectionCategory,
     RegexSignature,
 )
@@ -56,7 +56,7 @@ class VectorThreatEvaluator:
     ) -> None:
         self.config = config or default_settings
         self.categories = tuple(categories) if categories is not None else CATEGORIES
-        self._fuzzy_cache: dict[str, re.Pattern] = {}
+        self._fuzzy_cache: dict[tuple[str, int], list[tuple[str, re.Pattern, re.Pattern]]] = {}
 
     # ------------------------------------------------------------ metrics
     @staticmethod
@@ -66,9 +66,7 @@ class VectorThreatEvaluator:
             return 0.0
         counts = Counter(text)
         length = len(text)
-        return round(
-            -sum((n / length) * math.log2(n / length) for n in counts.values()), 3
-        )
+        return round(-sum((n / length) * math.log2(n / length) for n in counts.values()), 3)
 
     @staticmethod
     def repetition_ratio(text: str) -> float:
@@ -101,9 +99,7 @@ class VectorThreatEvaluator:
         long_token_ratio = min(1.0, len(long_tokens) / 8.0)
 
         score = (
-            non_text_ratio * 0.45
-            + min(1.0, symbol_ratio / 0.35) * 0.30
-            + long_token_ratio * 0.25
+            non_text_ratio * 0.45 + min(1.0, symbol_ratio / 0.35) * 0.30 + long_token_ratio * 0.25
         )
         return round(min(1.0, score), 3)
 
@@ -164,9 +160,7 @@ class VectorThreatEvaluator:
                     hits.append(signature.pattern)
                     hit_weights.append(weight)
                     key = (sig_id, signature.pattern)
-                    first_hit_index[key] = min(
-                        first_hit_index.get(key, sentinel), matched_index
-                    )
+                    first_hit_index[key] = min(first_hit_index.get(key, sentinel), matched_index)
                     continue
 
                 # FuzzySignature: count matched *phrases*, not signatures.
@@ -184,9 +178,7 @@ class VectorThreatEvaluator:
                     hits.append(phrase)
                     hit_weights.append(weight)
                     key = (sig_id, phrase)
-                    first_hit_index[key] = min(
-                        first_hit_index.get(key, sentinel), matched_index
-                    )
+                    first_hit_index[key] = min(first_hit_index.get(key, sentinel), matched_index)
 
             if not hits:
                 continue
@@ -213,17 +205,13 @@ class VectorThreatEvaluator:
         required_decoding = bool(first_hit_index) and min(first_hit_index.values()) > 0
         evasion = {
             "required_decoding": required_decoding,
-            "first_match_index": (
-                min(first_hit_index.values()) if first_hit_index else None
-            ),
+            "first_match_index": (min(first_hit_index.values()) if first_hit_index else None),
             "variant_count": len(variants),
         }
         return findings, evasion
 
     # ------------------------------------------------------------ verdict
-    def evaluate(
-        self, report: NormalizationReport
-    ) -> Tuple[bool, dict]:
+    def evaluate(self, report: NormalizationReport) -> tuple[bool, dict]:
         """Evaluate a pre-normalised prompt."""
         cfg = self.config
         findings, evasion = self._scan(report)
@@ -266,11 +254,7 @@ class VectorThreatEvaluator:
         if repetition >= 0.55:
             repetition_penalty = 1.4
 
-        total = (
-            base_score
-            + structural_penalty
-            + repetition_penalty
-        )
+        total = base_score + structural_penalty + repetition_penalty
 
         risk = round(min(MAX_SCORE, total), 2)
         hard_blocked = [f for f in findings.values() if f["hard_block"]]
@@ -278,9 +262,7 @@ class VectorThreatEvaluator:
         blocked = bool(hard_blocked) or risk >= cfg.block_threshold
         needs_review = (not blocked) and risk >= cfg.review_threshold
 
-        if hard_blocked:
-            verdict = "REJECT"
-        elif blocked:
+        if hard_blocked or blocked:
             verdict = "REJECT"
         elif needs_review:
             verdict = "REVIEW"
@@ -320,10 +302,16 @@ class VectorThreatEvaluator:
         """
         if not findings:
             return None
-        return "raw" if len(report.variants) <= 1 else report.layers_unwrapped[0] if report.layers_unwrapped else "raw"
+        return (
+            "raw"
+            if len(report.variants) <= 1
+            else report.layers_unwrapped[0]
+            if report.layers_unwrapped
+            else "raw"
+        )
 
     # ------------------------------------------------- v2-compatible entry
-    def evaluate_threat_vector(self, processed_string: str) -> Tuple[bool, dict]:
+    def evaluate_threat_vector(self, processed_string: str) -> tuple[bool, dict]:
         """Backwards-compatible helper: normalise then evaluate.
 
         v2 exposed ``evaluate_threat_vector(text) -> (blocked, metrics)``. That
@@ -334,7 +322,7 @@ class VectorThreatEvaluator:
         report = normalize(processed_string, self.config)
         return self.evaluate(report)
 
-    def inspect(self, raw_prompt: str) -> Tuple[bool, dict, NormalizationReport]:
+    def inspect(self, raw_prompt: str) -> tuple[bool, dict, NormalizationReport]:
         """One-shot convenience: normalise + evaluate + return the report."""
         report = normalize(raw_prompt, self.config)
         blocked, telemetry = self.evaluate(report)

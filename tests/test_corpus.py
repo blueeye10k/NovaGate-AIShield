@@ -25,14 +25,10 @@ def test_attacks_are_blocked(attack_corpus, evaluator):
         blocked, telemetry, _ = evaluator.inspect(entry["prompt"])
         problems = []
         if not blocked:
-            problems.append(
-                f"NOT BLOCKED (risk={telemetry['calculated_risk_index']})"
-            )
+            problems.append(f"NOT BLOCKED (risk={telemetry['calculated_risk_index']})")
         min_risk = entry.get("min_risk")
         if min_risk is not None and telemetry["calculated_risk_index"] < min_risk:
-            problems.append(
-                f"risk {telemetry['calculated_risk_index']} below min_risk {min_risk}"
-            )
+            problems.append(f"risk {telemetry['calculated_risk_index']} below min_risk {min_risk}")
         for category in entry.get("expect", []):
             if category not in telemetry["categories_triggered"]:
                 problems.append(f"missing category {category}")
@@ -78,11 +74,10 @@ def test_benign_prompts_stay_below_review_threshold(benign_corpus, evaluator):
         risk = telemetry["calculated_risk_index"]
         if risk >= evaluator.config.review_threshold:
             noisy.append(
-                f"  [{entry['id']}] risk={risk} "
-                f"categories={telemetry['categories_triggered']}"
+                f"  [{entry['id']}] risk={risk} categories={telemetry['categories_triggered']}"
             )
-    assert not noisy, (
-        "Benign prompts at or above the review threshold:\n" + _describe_failures(noisy)
+    assert not noisy, "Benign prompts at or above the review threshold:\n" + _describe_failures(
+        noisy
     )
 
 
@@ -105,9 +100,7 @@ def test_blocked_payloads_always_report_a_reason(attack_corpus, evaluator):
     for entry in attack_corpus:
         blocked, telemetry, _ = evaluator.inspect(entry["prompt"])
         assert blocked, entry["id"]
-        assert telemetry["categories_triggered"], (
-            f"{entry['id']} blocked with no category reported"
-        )
+        assert telemetry["categories_triggered"], f"{entry['id']} blocked with no category reported"
 
 
 def test_corpus_files_are_healthy(attack_corpus, benign_corpus):
@@ -119,9 +112,7 @@ def test_corpus_files_are_healthy(attack_corpus, benign_corpus):
         duplicates = {i for i in ids if ids.count(i) > 1}
         assert not duplicates, f"duplicate {label} ids: {duplicates}"
 
-    known_ids = {entry["id"] for entry in attack_corpus} | {
-        entry["id"] for entry in benign_corpus
-    }
+    known_ids = {entry["id"] for entry in attack_corpus} | {entry["id"] for entry in benign_corpus}
     assert len(known_ids) == len(attack_corpus) + len(benign_corpus), (
         "an id is reused across attacks.json and benign.json"
     )

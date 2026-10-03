@@ -1,0 +1,55 @@
+# Local stack. `docker compose up` gives you the gateway on
+# http://127.0.0.1:8000 and a persistent audit log.
+#
+# For anything reachable beyond this machine, front it with a TLS terminator and
+# keep the API key in a secret manager, not in this file.
+
+services:
+  novagate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: novagate-aishield:latest
+    container_name: novagate
+    restart: unless-stopped
+    ports:
+      # Bound to loopback on the host. Change to 0.0.0.0 only with TLS in front.
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Required: the container binds 0.0.0.0 internally, and NovaGate
+      # refuses to start on a non-loopback address without a key.
+      NOVAGATE_API_KEY: ${NOVAGATE_API_KEY:?set NOVAGATE_API_KEY in .env}
+      NOVAGATE_HOST: 0.0.0.0
+      NOVAGATE_PORT: 8000
+      NOVAGATE_CONSOLE_TELEMETRY: "false"
+      NOVAGATE_AUDIT_LOG: /var/log/novagate/security_audit.log
+      # Raise for production; 30/min is a development default.
+      NOVAGATE_RATE_LIMIT_REQUESTS: 30
+      NOVAGATE_RATE_LIMIT_WINDOW: 60
+    volumes:
+      - audit-logs:/var/log/novagate
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status==200 else 1)"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  audit-logs:

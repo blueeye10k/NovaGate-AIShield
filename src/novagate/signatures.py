@@ -21,16 +21,47 @@ All patterns are linear-time. No nested unbounded quantifiers.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
 
 # Filler words that get inserted between real words to evade naive matching.
 # Consumed only inside the skeleton matcher, where the regex stays linear.
 _FILLERS = (
-    "all", "the", "your", "any", "of", "and", "are", "is", "be", "to",
-    "that", "this", "these", "those", "please", "just", "now", "then",
-    "you", "were", "have", "has", "had", "been", "told", "said", "given",
-    "before", "earlier", "prior", "above", "below", "previous", "my", "it",
+    "all",
+    "the",
+    "your",
+    "any",
+    "of",
+    "and",
+    "are",
+    "is",
+    "be",
+    "to",
+    "that",
+    "this",
+    "these",
+    "those",
+    "please",
+    "just",
+    "now",
+    "then",
+    "you",
+    "were",
+    "have",
+    "has",
+    "had",
+    "been",
+    "told",
+    "said",
+    "given",
+    "before",
+    "earlier",
+    "prior",
+    "above",
+    "below",
+    "previous",
+    "my",
+    "it",
 )
 _FILLER_ALT = "(?:" + "|".join(_FILLERS) + ")?"
 _WORD_GAP = r"[\s\W_]{0,3}"
@@ -47,7 +78,9 @@ class RegexSignature:
 
     def compiled(self) -> re.Pattern:
         if self._compiled is None:
-            object.__setattr__(self, "_compiled", re.compile(self.pattern, re.IGNORECASE))
+            compiled = re.compile(self.pattern, re.IGNORECASE)
+            object.__setattr__(self, "_compiled", compiled)
+            return compiled
         return self._compiled
 
 
@@ -136,7 +169,10 @@ CATEGORIES: tuple = (
                 weight=2.4,
             ),
             RegexSignature(r"\bdisregard\s+(all\s+|any\s+)?(previous|prior|earlier|above)\b", 1.6),
-            RegexSignature(r"\b(ignore|forget|disregard)\b[^.]{0,40}\b(instruction|instructions|rule|rules|directive|directives|prompt)\b", 1.4),
+            RegexSignature(
+                r"\b(ignore|forget|disregard)\b[^.]{0,40}\b(instruction|instructions|rule|rules|directive|directives|prompt)\b",
+                1.4,
+            ),
         ),
     ),
     DetectionCategory(
@@ -167,8 +203,14 @@ CATEGORIES: tuple = (
                 ],
                 weight=2.2,
             ),
-            RegexSignature(r"\b(reveal|show|print|repeat|output|dump|disclose|leak)\b[^.]{0,50}\b(system\s?prompt|initial\s?(instructions?|text)|hidden\s+(rules?|instructions?)|configuration)\b", 1.8),
-            RegexSignature(r"\b(repeat|output|print|echo)\b[^.]{0,30}\b(text|words|content)\b[^.]{0,20}\b(above|before|preceding)\b", 1.6),
+            RegexSignature(
+                r"\b(reveal|show|print|repeat|output|dump|disclose|leak)\b[^.]{0,50}\b(system\s?prompt|initial\s?(instructions?|text)|hidden\s+(rules?|instructions?)|configuration)\b",
+                1.8,
+            ),
+            RegexSignature(
+                r"\b(repeat|output|print|echo)\b[^.]{0,30}\b(text|words|content)\b[^.]{0,20}\b(above|before|preceding)\b",
+                1.6,
+            ),
         ),
     ),
     DetectionCategory(
@@ -204,12 +246,24 @@ CATEGORIES: tuple = (
                 ],
                 weight=1.7,
             ),
-            RegexSignature(r"\b(act|roleplay|role-play|pretend|simulate|behave)\s+as\s+(an?\s+)?[a-z ]{0,30}(unrestricted|unfiltered|uncensored|evil|jailbroken|rogue|amoral|immoral|without\s+(rules|limits|filters|restrictions))", 1.8),
-            RegexSignature(r"\byou\s+are\s+(now\s+)?(dan|stan|aim|devmode|unrestricted|uncensored|unfiltered)\b", 1.5),
+            RegexSignature(
+                r"\b(act|roleplay|role-play|pretend|simulate|behave)\s+as\s+(an?\s+)?[a-z ]{0,30}(unrestricted|unfiltered|uncensored|evil|jailbroken|rogue|amoral|immoral|without\s+(rules|limits|filters|restrictions))",
+                1.8,
+            ),
+            RegexSignature(
+                r"\byou\s+are\s+(now\s+)?(dan|stan|aim|devmode|unrestricted|uncensored|unfiltered)\b",
+                1.5,
+            ),
             # Persona swap that is *also* paired with a safety exemption. The
             # pairing matters: "pretend you are an expert" is an ordinary request.
-            RegexSignature(r"\b(pretend|roleplay|act)\b[^.]{0,40}\b(ai|assistant|model|chatbot|llm)\b[^.]{0,40}\b(no|without)\b[^.]{0,20}\b(content\s+policy|polic(y|ies)|restrictions?|rules?|filters?|guidelines?|limits?)\b", 2.2),
-            RegexSignature(r"\b(hypothetical|fictional|imaginary)\b[^.]{0,50}\b(no|without)\b[^.]{0,20}\b(restrictions?|rules?|filters?|guidelines?|limits?)\b", 1.6),
+            RegexSignature(
+                r"\b(pretend|roleplay|act)\b[^.]{0,40}\b(ai|assistant|model|chatbot|llm)\b[^.]{0,40}\b(no|without)\b[^.]{0,20}\b(content\s+policy|polic(y|ies)|restrictions?|rules?|filters?|guidelines?|limits?)\b",
+                2.2,
+            ),
+            RegexSignature(
+                r"\b(hypothetical|fictional|imaginary)\b[^.]{0,50}\b(no|without)\b[^.]{0,20}\b(restrictions?|rules?|filters?|guidelines?|limits?)\b",
+                1.6,
+            ),
         ),
     ),
     DetectionCategory(
@@ -217,7 +271,10 @@ CATEGORIES: tuple = (
         description="Chat-template special tokens present in user input",
         base_criticality=3.4,
         signatures=(
-            RegexSignature(r"<\|(im_start|im_end|system|user|assistant|endoftext|eot_id|start_header_id|end_header_id)\|?>", 2.2),
+            RegexSignature(
+                r"<\|(im_start|im_end|system|user|assistant|endoftext|eot_id|start_header_id|end_header_id)\|?>",
+                2.2,
+            ),
             RegexSignature(r"\[/?INST\]|\[/?SYS\]|<\|startoftext\|>", 2.0),
             RegexSignature(r"</?(system|assistant|human|user_inst|system_inst)>", 2.0),
         ),
@@ -229,13 +286,27 @@ CATEGORIES: tuple = (
         hard_block=True,
         signatures=(
             # A special token immediately followed by a role or an instruction.
-            RegexSignature(r"<\|(?:im_start|system|user|assistant)\|?>\s*(?:system|user|assistant)\b", 3.0),
-            RegexSignature(r"<\|(?:im_start|system)\|?>[^\n]{0,80}?\b(ignore|disregard|forget|you\s+are\s+now|reveal|print\s+your|system\s*:)\b", 3.0),
-            RegexSignature(r"\[\s*/?INST\s*\][^\n]{0,80}?\b(ignore|disregard|forget|reveal|you\s+are|system)\b", 2.6),
+            RegexSignature(
+                r"<\|(?:im_start|system|user|assistant)\|?>\s*(?:system|user|assistant)\b", 3.0
+            ),
+            RegexSignature(
+                r"<\|(?:im_start|system)\|?>[^\n]{0,80}?\b(ignore|disregard|forget|you\s+are\s+now|reveal|print\s+your|system\s*:)\b",
+                3.0,
+            ),
+            RegexSignature(
+                r"\[\s*/?INST\s*\][^\n]{0,80}?\b(ignore|disregard|forget|reveal|you\s+are|system)\b",
+                2.6,
+            ),
             # Role header carrying a directive, e.g. "### System:\nYou must ...".
-            RegexSignature(r"(?:^|\n)\s*(?:#{2,4}\s*)?(?:system|assistant)\s*:\s*[^\n]{0,20}\b(ignore|disregard|forget|reveal|you\s+are\s+now|you\s+must|print\s+your|from\s+now|comply|unrestricted|no\s+restrictions)\b", 3.0),
+            RegexSignature(
+                r"(?:^|\n)\s*(?:#{2,4}\s*)?(?:system|assistant)\s*:\s*[^\n]{0,20}\b(ignore|disregard|forget|reveal|you\s+are\s+now|you\s+must|print\s+your|from\s+now|comply|unrestricted|no\s+restrictions)\b",
+                3.0,
+            ),
             RegexSignature(r"(?:^|\n)\s*system\s*:\s*\n", 2.0),
-            RegexSignature(r"\n\s*(?:system|assistant)\s*:\s*(?:reveal|ignore|disregard|print|show\s+me|output)\b", 2.8),
+            RegexSignature(
+                r"\n\s*(?:system|assistant)\s*:\s*(?:reveal|ignore|disregard|print|show\s+me|output)\b",
+                2.8,
+            ),
         ),
     ),
     DetectionCategory(
@@ -245,8 +316,14 @@ CATEGORIES: tuple = (
         signatures=(
             RegexSignature(r"!\[[^\]]{0,80}\]\(\s*https?://", 2.6),
             RegexSignature(r"https?://[^\s)\]]*\?[^\s)\]]*(\$\{|\{[a-z_]+\}|%s\b)", 2.2),
-            RegexSignature(r"\b(webhook\.site|requestbin\.\w+|pipedream\.net|ngrok\.io|burpcollaborator\.net|interact\.sh|oastify\.com|pastebin\.com/api)\b", 3.0),
-            RegexSignature(r"\b(send|post|upload|transmit|forward)\b[^.]{0,40}\b(conversation|transcript|chat\s?history|api\s?key|secret|credentials|password|system\s?prompt)\b[^.]{0,30}\b(to|via)\b", 2.4),
+            RegexSignature(
+                r"\b(webhook\.site|requestbin\.\w+|pipedream\.net|ngrok\.io|burpcollaborator\.net|interact\.sh|oastify\.com|pastebin\.com/api)\b",
+                3.0,
+            ),
+            RegexSignature(
+                r"\b(send|post|upload|transmit|forward)\b[^.]{0,40}\b(conversation|transcript|chat\s?history|api\s?key|secret|credentials|password|system\s?prompt)\b[^.]{0,30}\b(to|via)\b",
+                2.4,
+            ),
             RegexSignature(r"\bcurl\b[^|\n]{0,120}\|\s*(ba)?sh\b", 3.0),
         ),
     ),
@@ -259,12 +336,24 @@ CATEGORIES: tuple = (
             RegexSignature(r"<\s*tool_call\b|<\s*function_call\b|<\s*tool_use\b|<\s*invoke\b", 3.0),
             RegexSignature(r"\"(?:tool_calls|function_call|recipient_name)\"\s*:", 2.6),
             RegexSignature(r"\b(os\.system|subprocess\.(run|Popen|call)|eval|exec)\s*\(", 2.4),
-            RegexSignature(r"\brm\s+-rf\s+/|\bDROP\s+TABLE\b|\bTRUNCATE\s+TABLE\b|\bgit\s+push\s+--force\b", 3.0),
+            RegexSignature(
+                r"\brm\s+-rf\s+/|\bDROP\s+TABLE\b|\bTRUNCATE\s+TABLE\b|\bgit\s+push\s+--force\b",
+                3.0,
+            ),
             # A tool invocation that also carries an exfiltration target.
-            RegexSignature(r"\b(call|invoke|execute|trigger|use)\b[^.]{0,40}\b(tool|function|api|command|shell|bash|terminal|script)\b[^.]{0,60}(?:@[a-z0-9.-]+\.[a-z]{2,}|https?://|\battacker\b|\bexfil)", 2.4),
+            RegexSignature(
+                r"\b(call|invoke|execute|trigger|use)\b[^.]{0,40}\b(tool|function|api|command|shell|bash|terminal|script)\b[^.]{0,60}(?:@[a-z0-9.-]+\.[a-z]{2,}|https?://|\battacker\b|\bexfil)",
+                2.4,
+            ),
             # Destructive verbs aimed at real assets.
-            RegexSignature(r"\b(delete|remove|wipe|drop|destroy|erase)\b[^.]{0,25}\b(all\s+|every\s+|the\s+)?(files|table|database|records|repository|backups|volumes?)\b", 2.0),
-            RegexSignature(r"\b(call|invoke|execute|run)\b[^.]{0,30}\b(tool|function|command|shell|bash|terminal)\b[^.]{0,40}\bwith\b", 1.2),
+            RegexSignature(
+                r"\b(delete|remove|wipe|drop|destroy|erase)\b[^.]{0,25}\b(all\s+|every\s+|the\s+)?(files|table|database|records|repository|backups|volumes?)\b",
+                2.0,
+            ),
+            RegexSignature(
+                r"\b(call|invoke|execute|run)\b[^.]{0,30}\b(tool|function|command|shell|bash|terminal)\b[^.]{0,40}\bwith\b",
+                1.2,
+            ),
         ),
     ),
     DetectionCategory(
@@ -274,7 +363,10 @@ CATEGORIES: tuple = (
         hard_block=True,
         signatures=(
             RegexSignature(r"169\.254\.169\.254|metadata\.google\.internal|metadata\.goog\b", 3.0),
-            RegexSignature(r"\b(fetch|get|read|curl|request|retrieve)\b[^.]{0,40}\b(https?://)?(localhost|127\.0\.0\.1|0\.0\.0\.0|internal|intranet)\b", 1.8),
+            RegexSignature(
+                r"\b(fetch|get|read|curl|request|retrieve)\b[^.]{0,40}\b(https?://)?(localhost|127\.0\.0\.1|0\.0\.0\.0|internal|intranet)\b",
+                1.8,
+            ),
             RegexSignature(r"\.aws/iam/security-credentials|/latest/meta-data/", 2.6),
         ),
     ),
@@ -307,7 +399,10 @@ CATEGORIES: tuple = (
                 ],
                 weight=1.6,
             ),
-            RegexSignature(r"\b(bypass|disable|turn\s+off|circumvent|evade)\b[^.]{0,30}\b(safety|filter|filters|guardrail|guardrails|restriction|restrictions|policy|policies|moderation)\b", 1.9),
+            RegexSignature(
+                r"\b(bypass|disable|turn\s+off|circumvent|evade)\b[^.]{0,30}\b(safety|filter|filters|guardrail|guardrails|restriction|restrictions|policy|policies|moderation)\b",
+                1.9,
+            ),
         ),
     ),
     DetectionCategory(
@@ -326,7 +421,10 @@ CATEGORIES: tuple = (
                 ],
                 weight=2.0,
             ),
-            RegexSignature(r"\b(repeat|output|print|echo|say)\b[^.]{0,30}\b(\d{3,}|a\s+thousand|forever|indefinitely)\b[^.]{0,15}\btimes?\b", 2.0),
+            RegexSignature(
+                r"\b(repeat|output|print|echo|say)\b[^.]{0,30}\b(\d{3,}|a\s+thousand|forever|indefinitely)\b[^.]{0,15}\btimes?\b",
+                2.0,
+            ),
         ),
     ),
     DetectionCategory(

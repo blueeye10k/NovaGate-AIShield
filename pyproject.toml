@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# setuptools 77 is the first release that understands PEP 639 (`license` as an
+# SPDX expression plus `license-files`). Below that, `license = "MIT"` is
+# rejected as malformed.
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -28,7 +31,10 @@ classifiers = [
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
-    "License :: OSI Approved :: MIT License",
+    # No `License ::` classifier on purpose. PEP 639 makes it an error to set
+    # both an SPDX `license` expression and a license classifier, and setuptools
+    # 77+ warns. `license = "MIT"` above is the machine-readable form; PyPI
+    # still renders the license from it.
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -53,6 +59,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "mypy>=1.10",
+    "pip-audit>=2.7",
 ]
 proxy = [
     "httpx>=0.27",

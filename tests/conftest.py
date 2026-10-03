@@ -11,7 +11,7 @@ CORPUS_DIR = Path(__file__).parent / "corpus"
 
 
 def _load(name: str) -> dict:
-    with open(CORPUS_DIR / name, "r", encoding="utf-8") as handle:
+    with open(CORPUS_DIR / name, encoding="utf-8") as handle:
         return json.load(handle)
 
 
@@ -23,6 +23,7 @@ def attack_corpus() -> list[dict]:
 @pytest.fixture(scope="session")
 def benign_corpus() -> list[dict]:
     return _load("benign.json")["benign"]
+
 
 @pytest.fixture(scope="session")
 def evaluator():

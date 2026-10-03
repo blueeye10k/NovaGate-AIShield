@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, replace
-from typing import Mapping
+from ipaddress import ip_address
 
 
 def _env_str(name: str, default: str) -> str:
@@ -72,17 +72,13 @@ class Settings:
     # When the server is reachable from anything other than loopback this
     # becomes mandatory; see novagate.app._enforce_bind_safety.
     api_key: str | None = field(default_factory=lambda: _env_opt("NOVAGATE_API_KEY"))
-    require_auth: bool = field(
-        default_factory=lambda: _env_bool("NOVAGATE_REQUIRE_AUTH", False)
-    )
+    require_auth: bool = field(default_factory=lambda: _env_bool("NOVAGATE_REQUIRE_AUTH", False))
     # Only honour X-Forwarded-For when you actually run behind a proxy you
     # control. Trusting it blindly lets a client spoof its way past rate limits.
     trust_forwarded_for: bool = field(
         default_factory=lambda: _env_bool("NOVAGATE_TRUST_FORWARDED_FOR", False)
     )
-    expose_docs: bool = field(
-        default_factory=lambda: _env_bool("NOVAGATE_EXPOSE_DOCS", False)
-    )
+    expose_docs: bool = field(default_factory=lambda: _env_bool("NOVAGATE_EXPOSE_DOCS", False))
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: _env_list("NOVAGATE_CORS_ORIGINS")
     )
@@ -93,9 +89,7 @@ class Settings:
     )
     # Hard ceiling on input so a single request cannot burn CPU. Requests above
     # this are rejected outright rather than normalised.
-    max_raw_bytes: int = field(
-        default_factory=lambda: _env_int("NOVAGATE_MAX_RAW_BYTES", 64_000)
-    )
+    max_raw_bytes: int = field(default_factory=lambda: _env_int("NOVAGATE_MAX_RAW_BYTES", 64_000))
 
     # --- normalisation -------------------------------------------------
     max_decode_passes: int = field(
@@ -105,9 +99,7 @@ class Settings:
     max_decoded_bytes: int = field(
         default_factory=lambda: _env_int("NOVAGATE_MAX_DECODED_BYTES", 200_000)
     )
-    min_b64_run: int = field(
-        default_factory=lambda: _env_int("NOVAGATE_MIN_B64_RUN", 16)
-    )
+    min_b64_run: int = field(default_factory=lambda: _env_int("NOVAGATE_MIN_B64_RUN", 16))
     # Fraction of decoded characters that must be printable for a base64/hex
     # decode to be trusted. Binary noise is discarded instead of replacing the
     # payload (this is what made the original decoder bypassable).
@@ -141,9 +133,7 @@ class Settings:
     audit_log_path: str = field(
         default_factory=lambda: _env_str("NOVAGATE_AUDIT_LOG", "security_audit.log")
     )
-    audit_enabled: bool = field(
-        default_factory=lambda: _env_bool("NOVAGATE_AUDIT_ENABLED", True)
-    )
+    audit_enabled: bool = field(default_factory=lambda: _env_bool("NOVAGATE_AUDIT_ENABLED", True))
     audit_max_bytes: int = field(
         default_factory=lambda: _env_int("NOVAGATE_AUDIT_MAX_BYTES", 10_000_000)
     )
@@ -155,9 +145,7 @@ class Settings:
     )
 
     # --- pass-through proxy (optional) ---------------------------------
-    upstream_url: str | None = field(
-        default_factory=lambda: _env_opt("NOVAGATE_UPSTREAM_URL")
-    )
+    upstream_url: str | None = field(default_factory=lambda: _env_opt("NOVAGATE_UPSTREAM_URL"))
     upstream_api_key: str | None = field(
         default_factory=lambda: _env_opt("NOVAGATE_UPSTREAM_API_KEY")
     )
@@ -170,13 +158,33 @@ class Settings:
         default_factory=lambda: _env_bool("NOVAGATE_CONSOLE_TELEMETRY", True)
     )
 
-    def evolve(self, **overrides) -> "Settings":
+    def evolve(self, **overrides) -> Settings:
         """Return a copy with ``overrides`` applied."""
         return replace(self, **overrides)
 
     @property
     def is_loopback(self) -> bool:
-        return self.host in {"127.0.0.1", "::1", "localhost"}
+        """True when the bind address cannot be reached off-host.
+
+        Anything else -- including the unspecified addresses ``0.0.0.0`` and
+        ``::``, which bind *every* interface -- requires authentication. So do
+        the empty string and ``*``, which uvicorn and asyncio interpret the same
+        way, and any other ``127.x`` address rather than a hard-coded single one.
+        """
+        host = self.host.strip().lower().strip("[]")
+        if host in {"localhost", "", "*"}:
+            # Empty and "*" mean "every interface" to uvicorn/asyncio. They are
+            # not loopback, so they must require a key.
+            return host == "localhost"
+        try:
+            return ip_address(host).is_loopback
+        except ValueError:
+            # A hostname. "localhost" is handled above; anything else (including
+            # a name that resolves to 127.0.0.1) is assumed to be reachable
+            # elsewhere, because resolving it here would be a DNS lookup in a
+            # security check and could differ from what the socket ends up
+            # binding.
+            return False
 
 
 settings = Settings()
