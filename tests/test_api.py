@@ -116,6 +116,42 @@ def test_missing_field_is_422_with_field_error(client):
     assert response.status_code == 422
 
 
+# Input that is structurally impossible for a person to have typed.
+STRUCTURAL_FLOOD = " ".join("!" * 30 for _ in range(8)) + "".join(
+    chr(1 + (i * 3) % 7) for i in range(2000)
+)
+
+
+def test_structural_anomaly_is_422(cfg):
+    """The 422 branch must be reachable, not aspirational.
+
+    v2 documented 422 for "high-entropy structural anomalies" and gated it on
+    ``shannon_entropy >= 5.8``, which no real input can reach. The replacement
+    has to actually fire, or the README is documenting a fiction again.
+    """
+    app = create_app(cfg.evolve(console_telemetry=False))
+    with TestClient(app) as client:
+        response = send(client, STRUCTURAL_FLOOD)
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["status"] == "ANOMALOUS_PAYLOAD_STRUCTURE"
+    assert detail["structural_anomaly"] >= 0.9
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "How do I list files in a directory in Linux?",
+        "def f(x):\n    return [i**2 for i in range(x) if i % 2 == 0]\n",
+        '{"name": "test", "values": [1, 2, 3], "nested": {"a": true}}',
+        "SELECT id, name FROM users WHERE created_at > NOW() - INTERVAL '30 days';",
+    ],
+)
+def test_structural_anomaly_does_not_reject_real_input(client, payload):
+    """The 422 branch must not fire on code, JSON, SQL or prose."""
+    assert send(client, payload).status_code == 200
+
+
 def test_oversized_prompt_is_413(cfg):
     app = create_app(cfg.evolve(max_raw_bytes=200, console_telemetry=False))
     with TestClient(app) as client:

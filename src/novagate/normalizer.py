@@ -263,6 +263,10 @@ class NormalizationReport:
     """
 
     primary: str
+    #: The untouched input, before any folding or control-character removal.
+    #: Structural scoring must run against this, not ``primary`` -- see
+    #: ``VectorThreatEvaluator.structural_anomaly_score``.
+    raw: str = ""
     variants: list[str] = field(default_factory=list)
     layers_unwrapped: list[str] = field(default_factory=list)
     had_invisible_chars: bool = False
@@ -575,6 +579,7 @@ class AdvancedPayloadNormalizer:
 
         return NormalizationReport(
             primary=display,
+            raw=raw_input,
             variants=variants,
             layers_unwrapped=layers,
             had_invisible_chars=had_invisible,

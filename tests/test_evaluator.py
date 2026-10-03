@@ -207,6 +207,70 @@ def test_structural_anomaly_is_a_usable_range():
     assert noisy > normal, "the metric must be able to fire"
 
 
+def test_structural_anomaly_crosses_the_threshold(evaluator):
+    """The 422 branch must be reachable from real input.
+
+    Not just "higher than prose" -- actually over the 0.9 default, or the
+    branch is dead code again and the README is claiming a behaviour that does
+    not exist.
+    """
+    from novagate.config import Settings
+
+    threshold = Settings().structural_anomaly_threshold
+    flood = " ".join("!" * 30 for _ in range(8)) + "".join(
+        chr(1 + (i * 3) % 7) for i in range(2000)
+    )
+    assert evaluator.structural_anomaly_score(flood) >= threshold
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "How do I list files in a directory in Linux?",
+        "def f(x):\n    return [i**2 for i in range(x) if i % 2 == 0]\n",
+        '{"name": "test", "values": [1, 2, 3], "nested": {"a": true, "b": null}}',
+        "Explain in detail how the asyncio event loop schedules coroutines "
+        "and why cooperative multitasking differs from preemptive scheduling. " * 3,
+        "SELECT id, name FROM users WHERE created_at > NOW() - INTERVAL '30 days';",
+    ],
+)
+def test_structural_anomaly_spares_real_input(evaluator, payload):
+    """Code, JSON, SQL and prose must all stay well under the threshold.
+
+    These are the shapes a real developer sends. Scoring any of them above the
+    threshold would mean the 422 branch rejects legitimate traffic.
+    """
+    from novagate.config import Settings
+
+    threshold = Settings().structural_anomaly_threshold
+    assert evaluator.structural_anomaly_score(payload) < threshold * 0.6
+
+
+def test_structural_anomaly_is_scored_on_raw_input(evaluator):
+    """The score must see control characters that normalisation strips.
+
+    Scoring ``report.primary`` made the branch unreachable for the same reason
+    v2's entropy gate was: normalisation removes exactly the bytes the metric is
+    looking for, so the worst input scored best after cleaning.
+    """
+    from novagate.config import settings
+
+    flood = " ".join("!" * 30 for _ in range(8)) + "".join(
+        chr(1 + (i * 3) % 7) for i in range(2000)
+    )
+    _, telemetry, report = evaluator.inspect(flood)
+
+    on_raw = evaluator.structural_anomaly_score(report.raw)
+    on_primary = evaluator.structural_anomaly_score(report.primary)
+    assert telemetry["structural_anomaly"] == on_raw
+    assert on_raw > on_primary, "normalisation should have hidden the signal"
+    assert on_primary < settings.structural_anomaly_threshold
+
+
+def test_structural_anomaly_ignores_the_empty_string(evaluator):
+    assert evaluator.structural_anomaly_score("") == 0.0
+
+
 def test_entropy_of_real_payloads_stays_below_the_old_threshold(evaluator):
     """Documents why v2's ``entropy >= 5.8`` gate could never fire.
 

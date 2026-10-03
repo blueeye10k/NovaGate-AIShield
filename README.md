@@ -27,7 +27,7 @@ test, and every limitation is written down. Put it in front of your app as a
 cheap first tier. Put a model classifier behind it if the stakes are high.
 
 **Current state:** 36/36 corpus attacks blocked, 0/46 benign prompts blocked,
-130 tests passing. These are small hand-written corpora, not an independent
+168 tests passing. These are small hand-written corpora, not an independent
 benchmark — see [Limitations](#limitations-read-this-part) before you rely on
 the numbers.
 
@@ -201,7 +201,7 @@ Or `cp .env.example .env`, set `NOVAGATE_API_KEY`, and `docker compose up`.
 ## Testing
 
 ```bash
-pytest                                    # 130 tests, no network needed
+pytest                                    # 168 tests, no network needed
 pytest tests/test_corpus.py -v            # just the detection corpora
 python examples/demo_corpus.py            # readable corpus table
 ```

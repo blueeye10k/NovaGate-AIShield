@@ -83,8 +83,15 @@ class VectorThreatEvaluator:
 
         v2 gated HTTP 422 on ``shannon_entropy >= 5.8``, which is unreachable:
         entropy over normalised text peaks around 4.9 even for base64 or hex
-        blobs, so the branch never executed. These components actually fire:
-        non-text character ratio, symbol density and token repetition.
+        blobs, so the branch never executed. These three components actually
+        fire: non-text character ratio, symbol density, and over-long tokens.
+
+        Pass the **raw** input here, not ``report.primary``. Normalisation
+        strips control characters and collapses whitespace, so scoring the
+        cleaned-up string makes this unreachable for the same reason the entropy
+        gate was: the input that should trip it is the input normalisation most
+        improves. Measured on raw bytes, a control-character flood scores 0.95;
+        measured on the same bytes after normalisation, 0.55.
         """
         if not text:
             return 0.0
@@ -244,7 +251,9 @@ class VectorThreatEvaluator:
             }
             base_score += invisible_bonus
 
-        structural = self.structural_anomaly_score(report.primary)
+        # Score the raw input: `primary` has already had control characters
+        # removed, which is the very signal this is meant to catch.
+        structural = self.structural_anomaly_score(report.raw or report.primary)
         repetition = self.repetition_ratio(report.primary)
 
         structural_penalty = 0.0
