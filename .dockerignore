@@ -1,0 +1,40 @@
+# Keep the build context small and free of anything that must not ship.
+
+.git/
+.github/
+.gitignore
+.env
+.env.*
+!.env.example
+
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.so
+
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+tests/
+docs/
+examples/
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+docker-compose.yml
+
+# The audit log can contain prompt fragments.
+*.log
+security_audit.log*
+
+# Local runtime output
+*.pcap
+*.pcapng
